@@ -1,0 +1,1400 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>KFNI AMP Map</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    #map {
+      position: absolute;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      right: 280px;
+      display: none;
+    }
+    #sidebar {
+      position: absolute;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: 280px;
+      background: #ffffff;
+      border-left: 1px solid #ddd;
+      box-shadow: -2px 0 4px rgba(0,0,0,0.05);
+      padding: 10px 12px;
+      box-sizing: border-box;
+      overflow-y: auto;
+      font-size: 13px;
+      display: none;
+    }
+    #sidebar h2 {
+      font-size: 16px;
+      margin: 4px 0 8px 0;
+    }
+    #sidebar h3 {
+      font-size: 13px;
+      margin: 10px 0 4px 0;
+      border-bottom: 1px solid #eee;
+      padding-bottom: 2px;
+    }
+    .section { margin-bottom: 8px; }
+    .status-item, .spc-item, .usage-item, .owner-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin: 2px 0;
+    }
+    .status-left {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+      border: 1px solid #888;
+    }
+    #spc-list, #usage-list, #owner-list {
+      max-height: 140px;
+      overflow-y: auto;
+      border: 1px solid #eee;
+      padding: 4px;
+      box-sizing: border-box;
+      background: #fafafa;
+    }
+    #search-input,
+    #borrower-input,
+    #disco-input,
+    #usage-search,
+    #spc-search,
+    #owner-search {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 4px;
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+    #search-btn, #reset-btn, #borrower-btn, #disco-btn, #logout-btn {
+      width: 100%;
+      padding: 6px;
+      font-size: 12px;
+      cursor: pointer;
+      border-radius: 3px;
+      border: 1px solid #ccc;
+      background: #f5f5f5;
+      margin-top: 4px;
+    }
+    #search-btn:hover, #reset-btn:hover, #borrower-btn:hover, #disco-btn:hover, #logout-btn:hover {
+      background: #e9e9e9;
+    }
+    #usage-all, #usage-none,
+    #spc-all, #spc-none,
+    #owner-all, #owner-none {
+      padding: 4px 6px;
+      font-size: 11px;
+      cursor: pointer;
+      border-radius: 3px;
+      border: 1px solid #ccc;
+      background: #f5f5f5;
+    }
+    #usage-all:hover, #usage-none:hover,
+    #spc-all:hover, #spc-none:hover,
+    #owner-all:hover, #owner-none:hover {
+      background: #e9e9e9;
+    }
+    .mini-btn-row {
+      display: flex;
+      gap: 4px;
+      margin: 2px 0 4px 0;
+    }
+
+    /* ====== Login Gate ====== */
+    #login-gate {
+      position: fixed;
+      inset: 0;
+      background: url('login-bg.png') center/cover no-repeat fixed;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 99999;
+    }
+    /* login background overlay */
+    #login-gate::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: rgba(255,255,255,0.55);
+      pointer-events: none;
+    }
+    #login-gate > .login-card {
+      position: relative;
+      z-index: 1;
+    }
+
+    .login-card {
+      background: #fff;
+      padding: 24px;
+      border-radius: 8px;
+      width: 340px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+      border: 1px solid #e5e5e5;
+    }
+    .login-card h2 {
+      margin: 0 0 12px 0;
+      font-size: 18px;
+      text-align: center;
+    }
+    .login-card input {
+      width: 100%;
+      padding: 10px;
+      box-sizing: border-box;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 13px;
+      margin-bottom: 10px;
+    }
+    .login-card button {
+      width: 100%;
+      padding: 10px;
+      cursor: pointer;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+      background: #f5f5f5;
+      font-size: 13px;
+    }
+    .login-card button:hover {
+      background: #e9e9e9;
+    }
+    #login-error {
+      color: #d00;
+      font-size: 12px;
+      margin-top: 10px;
+      display: none;
+    }
+    .login-footnote {
+      font-size: 13px;
+      color: #666;
+      margin-top: 12px;
+      line-height: 1.35;
+      text-align: center;
+    }
+  </style>
+
+  <script>
+    // ============================================================
+    // Step 1/2/3: 파일럿용 공유 계정 로그인 게이트 + 로그아웃
+    // ============================================================
+    const PILOT_ID = "kiwoomnpl";
+    const PILOT_PW = "1023";
+
+    function isLoggedIn() {
+      return sessionStorage.getItem("asset_map_logged_in") === "true";
+    }
+
+    function showLoginGate() {
+      const gate = document.getElementById("login-gate");
+      if (gate) gate.style.display = "flex";
+
+      const mapEl = document.getElementById("map");
+      if (mapEl) mapEl.style.display = "none";
+
+      const sidebar = document.getElementById("sidebar");
+      if (sidebar) sidebar.style.display = "none";
+    }
+
+    function showApp() {
+      const gate = document.getElementById("login-gate");
+      if (gate) gate.style.display = "none";
+
+      const mapEl = document.getElementById("map");
+      if (mapEl) mapEl.style.display = "block";
+
+      const sidebar = document.getElementById("sidebar");
+      if (sidebar) sidebar.style.display = "block";
+
+      if (!window.__mapInitialized && window.initMap) {
+        window.__mapInitialized = true;
+        window.initMap();
+      }
+    }
+
+    function logout() {
+      sessionStorage.removeItem("asset_map_logged_in");
+      location.reload();
+    }
+
+    window.addEventListener("DOMContentLoaded", () => {
+      const loginBtn = document.getElementById("login-btn");
+      const errorEl = document.getElementById("login-error");
+
+      if (loginBtn) {
+        loginBtn.addEventListener("click", () => {
+          const id = (document.getElementById("login-id") || {}).value?.trim?.() || "";
+          const pw = (document.getElementById("login-pw") || {}).value?.trim?.() || "";
+
+          if (id === PILOT_ID && pw === PILOT_PW) {
+            sessionStorage.setItem("asset_map_logged_in", "true");
+            showApp();
+          } else {
+            if (errorEl) errorEl.style.display = "block";
+          }
+        });
+      }
+
+      const pwInput = document.getElementById("login-pw");
+      if (pwInput) {
+        pwInput.addEventListener("keyup", (e) => {
+          if (e.key === "Enter" && loginBtn) loginBtn.click();
+        });
+      }
+
+      if (isLoggedIn()) {
+        showApp();
+      } else {
+        showLoginGate();
+      }
+    });
+  </script>
+</head>
+
+<body>
+  <div id="login-gate">
+    <div class="login-card">
+      <h2>KFNI AMP Map</h2>
+      <input id="login-id" type="text" placeholder="ID" />
+      <input id="login-pw" type="password" placeholder="Password" />
+      <button id="login-btn">로그인</button>
+      <div id="login-error">아이디 또는 비밀번호가 올바르지 않습니다.</div>
+      <div class="login-footnote">
+        Designed by SIS<br/>
+      </div>
+    </div>
+  </div>
+
+  <div id="map"></div>
+
+  <div id="sidebar">
+    <h2>KFNI AMP Map</h2>
+
+    <div class="section">
+      <button id="logout-btn" onclick="logout()">🔒 로그아웃</button>
+    </div>
+
+    <div class="section">
+      <button id="reset-btn">🔄 필터 초기화 (전체 보기)</button>
+    </div>
+
+    <div class="section">
+      <h3>지번 / 주소 검색</h3>
+      <input id="search-input" type="text" placeholder="지번, 도로명, 건물명 등 검색" />
+      <button id="search-btn">현재 지도에서 검색</button>
+      <p style="font-size:11px;color:#666;margin-top:4px;">
+        입력한 주소/지번을 현재 지도에서 찾아 주변 자산 위치를 확인합니다.
+      </p>
+    </div>
+
+    <div class="section">
+      <h3>차주명 검색</h3>
+      <input id="borrower-input" type="text" placeholder="차주명 입력 후 엔터 또는 버튼 클릭" />
+      <button id="borrower-btn">차주명으로 강조 표시</button>
+      <p style="font-size:11px;color:#666;margin-top:4px;">
+        차주명에 해당 텍스트가 포함된 마커를 <b>기본 핀</b>으로 강조하고, 해당 마커 주변 <b>2km 원</b>을 표시합니다.<br/>
+        (다른 마커는 그대로 유지됩니다.)
+      </p>
+    </div>
+
+    <div class="section">
+      <h3>Disco에서 지번 검색</h3>
+      <input id="disco-input" type="text" placeholder="지번/주소 입력" />
+      <button id="disco-btn">Disco에서 검색</button>
+      <p style="font-size:11px;color:#666;margin-top:4px;">
+        입력한 지번을 클립보드에 복사하고, 새 탭에서 <b>disco.re</b>를 엽니다.<br>
+        열린 탭에서 검색창에 붙여넣기 후 검색하면 됩니다.
+      </p>
+    </div>
+
+    <div class="section">
+      <h3>진행 상태 필터</h3>
+      <div id="status-filters"></div>
+    </div>
+
+    <div class="section">
+      <h3>진행 상태별 건수</h3>
+      <div id="status-counts"></div>
+    </div>
+
+    <div class="section">
+      <h3>담보용도 필터</h3>
+      <input id="usage-search" type="text" placeholder="담보용도 검색" />
+      <div class="mini-btn-row">
+        <button id="usage-all">전체</button>
+        <button id="usage-none">해제</button>
+      </div>
+      <div id="usage-list"></div>
+    </div>
+
+    <div class="section">
+      <h3>SPC 관리번호 필터</h3>
+      <input id="spc-search" type="text" placeholder="SPC 검색" />
+      <div class="mini-btn-row">
+        <button id="spc-all">전체</button>
+        <button id="spc-none">해제</button>
+      </div>
+      <div id="spc-list"></div>
+    </div>
+
+    <div class="section">
+      <h3>담당자 필터</h3>
+      <input id="owner-search" type="text" placeholder="담당자 검색" />
+      <div class="mini-btn-row">
+        <button id="owner-all">전체</button>
+        <button id="owner-none">해제</button>
+      </div>
+      <div id="owner-list"></div>
+    </div>
+  </div>
+
+  <script>
+    // ============================================================
+    // 자산지도 로직
+    // ============================================================
+
+    // ---------- 전역 변수 ----------
+    var map;
+    var infowindow;
+    var markers = []; // { marker, statusKey, spcKey, usageKey, ownerKey, borrowerName, originalIconUrl, position }
+    var searchCircle = null;
+    var borrowerCircles = [];
+    var geocoder = null;
+
+    // (1) 진행 상태 6가지로 확장
+    var STATUS_KEYS = ["담보종결", "완제", "유입", "인터림 종결", "전환무담보", "진행"];
+
+    // 📅 날짜로 표시할 컬럼 목록
+    var DATE_COLUMNS = [
+      "기준일자",
+      "실제 회수일자",
+      "회수 일자",
+      "수정 회수 일자",
+      "선행사건 경매개시일자",
+      "선행사건 배당요구종기일자",
+      "매각기일",
+      "낙찰 일자",
+      "대금납부기일",
+      "대금납부일자",
+      "배당기일(종결)",
+      "회생 인가일자"
+    ];
+
+    // 💰 천단위 콤마 표시할 숫자 컬럼 목록
+    var NUMERIC_COLUMNS = [
+      "회수 총금액",
+      "감정평가액 총액",
+      "감정평가액-대지",
+      "감정평가액-건물",
+      "감정평가액-제시 외",
+      "감정평가액-기계기구",
+      "감정평가액-기계기구 등",
+      "OPB (Cut Off)",
+      "OPB (기준일자)",
+      "합계",           // 실제 key는 합계지만, 화면표시는 선순위 합계로 변경 처리
+      "선순위 합계",    // 혹시 데이터가 이미 이 이름이면 대비
+      "임금채권금액",
+      "임차보증금",
+      "소액보증금",
+      "당해세액",
+      "조세채권금액",
+      "기타금액",
+      "AMP금액",
+      "수정AMP금액",
+      "1회차 최저매각가",
+      "최근 최저매각가",
+      "낙찰금액"
+    ];
+
+    // 가시성 상태 저장 (필터용)
+    var statusVisibility = {};
+    var spcVisibility = {};
+    var usageVisibility = {};
+    var ownerVisibility = {};
+
+    // (4) 차주명 검색은 "필터"가 아니라 "강조"로 동작
+    var borrowerHighlightQuery = "";
+
+    // ---------- 문자열/키 정규화 ----------
+    function normalizeKey(str) {
+      if (str === null || str === undefined) return "";
+      return String(str)
+        .replace(/\u00A0/g, " ")
+        .replace(/\s+/g, "")
+        .toLowerCase();
+    }
+
+    var NUMERIC_KEY_SET = (function() {
+      var set = {};
+      for (var i = 0; i < NUMERIC_COLUMNS.length; i++) {
+        set[normalizeKey(NUMERIC_COLUMNS[i])] = true;
+      }
+      return set;
+    })();
+
+    var DATE_KEY_SET = (function() {
+      var set = {};
+      for (var i = 0; i < DATE_COLUMNS.length; i++) {
+        set[normalizeKey(DATE_COLUMNS[i])] = true;
+      }
+      return set;
+    })();
+
+    // ---------- 날짜 포맷 ----------
+    function formatDateIfNeeded(key, raw) {
+      if (raw === null || raw === undefined) return "";
+
+      var nk = normalizeKey(key);
+      if (!DATE_KEY_SET[nk]) return raw;
+
+      var str = String(raw).trim();
+      if (!str) return "";
+
+      // assets.json에서 YYYY-MM-DD 또는 ISO 날짜로 들어온 값을 화면에는 YYYY-MM-DD로 통일
+      var isoLike = str.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+      if (isoLike) {
+        var mm = String(isoLike[2]).padStart(2, "0");
+        var dd = String(isoLike[3]).padStart(2, "0");
+        return isoLike[1] + "-" + mm + "-" + dd;
+      }
+
+      var d = new Date(str);
+      if (!isNaN(d.getTime())) {
+        var y = d.getFullYear();
+        var m = String(d.getMonth() + 1).padStart(2, "0");
+        var day = String(d.getDate()).padStart(2, "0");
+        return y + "-" + m + "-" + day;
+      }
+
+      return str;
+    }
+
+    // ---------- 숫자 포맷 ----------
+    function formatNumberIfNeeded(key, raw) {
+      if (raw === null || raw === undefined) return "";
+      var str = String(raw).trim();
+
+      var nk = normalizeKey(key);
+      if (!NUMERIC_KEY_SET[nk]) return str;
+
+      var cleaned = str
+        .replace(/,/g, "")
+        .replace(/[^\d.-]/g, "");
+
+      if (cleaned === "") return str;
+
+      var num = Number(cleaned);
+      if (isNaN(num)) return str;
+
+      return num.toLocaleString("ko-KR");
+    }
+
+    // (3) 표시명 치환: "합계" => "선순위 합계"
+    function displayKeyName(key) {
+      if ((key || "").trim() === "합계") return "선순위 합계";
+      return key;
+    }
+
+    // ---------- 진행 상태 정규화 ----------
+    function normalizeStatus(statusRaw) {
+      var s = (statusRaw || "").trim();
+
+      // 널/공백
+      if (!s) return "기타";
+
+      // 포함 규칙(유연하게)
+      if (s.indexOf("전환무담보") !== -1) return "전환무담보";
+      if (s.indexOf("완제") !== -1) return "완제";
+      if (s.indexOf("유입") !== -1) return "유입";
+      if (s.indexOf("인터림") !== -1 && s.indexOf("종결") !== -1) return "인터림 종결";
+
+      // "담보 종결(진행)" 같이 오던 값도 담보종결로 매핑
+      if (s.indexOf("담보") !== -1 && s.indexOf("종결") !== -1) return "담보종결";
+
+      if (s.indexOf("진행") !== -1) return "진행";
+
+      return "기타";
+    }
+
+    function statusColorName(statusKey) {
+      // (1) 6개 상태별 색 지정
+      if (statusKey === "진행") return "yellow";
+      if (statusKey === "완제") return "green";
+      if (statusKey === "전환무담보") return "red";
+      if (statusKey === "유입") return "blue";
+
+      // ✅ 변경: '인터림 종결' 색상을 pink 으로
+      if (statusKey === "인터림 종결") return "pink";
+
+      if (statusKey === "담보종결") return "purple";
+      return "purple";
+    }
+
+    function getStatusIconUrl(statusKey) {
+      // ✅ 변경: '인터림 종결'도 다른 상태들과 동일하게 ms icons dot 핀 사용
+      var colorName = statusColorName(statusKey);
+      return "http://maps.google.com/mapfiles/ms/icons/" + colorName + "-dot.png";
+    }
+
+    // ---------- 데이터 로드 ----------
+    function loadAssets() {
+      var xhr = new XMLHttpRequest();
+      xhr.open("GET", "/api/assets", false);
+      xhr.send(null);
+
+      if (xhr.status === 200) {
+        try {
+          return JSON.parse(xhr.responseText);
+        } catch (e) {
+          console.error("assets.json 파싱 에러:", e);
+          return [];
+        }
+      } else {
+        console.error("assets.json 로드 실패:", xhr.status, xhr.statusText);
+        return [];
+      }
+    }
+
+    // ---------- 지도 Fit util: 과도한 확대 제한 ----------
+    function fitBoundsWithMaxZoom(bounds, maxZoom) {
+      if (!bounds || bounds.isEmpty()) return;
+
+      map.fitBounds(bounds);
+
+      // fitBounds가 너무 확대해버리는 것을 제한
+      google.maps.event.addListenerOnce(map, "idle", function() {
+        if (map.getZoom() > maxZoom) map.setZoom(maxZoom);
+      });
+    }
+
+    function clearBorrowerCircles() {
+      for (var i = 0; i < borrowerCircles.length; i++) {
+        borrowerCircles[i].setMap(null);
+      }
+      borrowerCircles = [];
+    }
+
+    function initMap() {
+      if (!isLoggedIn()) return;
+
+      var assets = loadAssets();
+
+      map = new google.maps.Map(document.getElementById("map"), {
+        zoom: 7,
+        center: { lat: 36.5, lng: 127.8 }
+      });
+
+      infowindow = new google.maps.InfoWindow();
+      geocoder = new google.maps.Geocoder();
+
+      // 초기화
+      for (var i = 0; i < STATUS_KEYS.length; i++) {
+        statusVisibility[STATUS_KEYS[i]] = true;
+      }
+
+      var bounds = new google.maps.LatLngBounds();
+
+      for (var a = 0; a < assets.length; a++) {
+        var asset = assets[a];
+
+        var lat = parseFloat(asset.geo_lat);
+        var lng = parseFloat(asset.geo_lng);
+        if (isNaN(lat) || isNaN(lng)) continue;
+
+        var statusKey = normalizeStatus(asset["진행 상태"]);
+        // 상태가 6개 밖이면 기타로 떨어질 수 있으니, sidebar는 6개만 보여주지만
+        // marker 자체는 표시되게 "기타"도 허용
+        if (STATUS_KEYS.indexOf(statusKey) === -1) statusKey = "기타";
+
+        var spcKey = asset["SPC 관리번호"] || "미지정";
+        if (spcVisibility[spcKey] === undefined) spcVisibility[spcKey] = true;
+
+        var usageKey = asset["담보용도"] || "기타";
+        if (usageVisibility[usageKey] === undefined) usageVisibility[usageKey] = true;
+
+        var ownerKey =
+          asset["담당자"] ||
+          asset["담당"] ||
+          asset["관리자"] ||
+          asset["담당자명"] ||
+          "미지정";
+        if (ownerVisibility[ownerKey] === undefined) ownerVisibility[ownerKey] = true;
+
+        var borrowerName = asset["차주명"] || "";
+
+        var position = { lat: lat, lng: lng };
+
+        var originalIconUrl = getStatusIconUrl(statusKey);
+
+        var marker = new google.maps.Marker({
+          position: position,
+          map: map,
+          icon: originalIconUrl,
+          title: asset["담보주소지"] || ""
+        });
+
+        // InfoWindow 내용
+        var rows = "";
+        for (var key in asset) {
+          if (!Object.prototype.hasOwnProperty.call(asset, key)) continue;
+          var raw = asset[key];
+          var value = formatDateIfNeeded(key, raw);
+          value = formatNumberIfNeeded(key, value);
+          var showKey = displayKeyName(key);
+          rows += '<p style="margin:2px 0;"><b>' + showKey + ':</b> ' + value + '</p>';
+        }
+
+        var infoHtml =
+          '<div style="min-width:320px; max-width:420px; max-height:320px; overflow-y:auto;">' +
+            rows +
+          '</div>';
+
+        (function(infoHtml, markerInstance) {
+          google.maps.event.addListener(markerInstance, "click", function() {
+            infowindow.setContent(infoHtml);
+            infowindow.open(map, markerInstance);
+          });
+        })(infoHtml, marker);
+
+        markers.push({
+          marker: marker,
+          statusKey: statusKey,
+          spcKey: spcKey,
+          usageKey: usageKey,
+          ownerKey: ownerKey,
+          borrowerName: borrowerName,
+          originalIconUrl: originalIconUrl,
+          position: position,
+          infoHtml: infoHtml
+        });
+
+        bounds.extend(position);
+      }
+
+      if (!bounds.isEmpty()) {
+        // (5) 초기 전체 보기에서도 과도확대 방지
+        fitBoundsWithMaxZoom(bounds, 11);
+      }
+
+      // 최초 UI 렌더
+      renderStatusFilters();
+      refreshAllCountsAndLists(); // (6) 초기 counts/list는 "현재(전체)" 기준
+
+      setupUsageFilterUI();
+      setupSpcFilterUI();
+      setupOwnerFilterUI();
+
+      setupSearchBox();
+      setupBorrowerBox();
+      setupDiscoBox();
+      setupResetButton();
+
+      // 최초 가시성 적용
+      updateMarkerVisibility();       // 필터 적용
+      applyBorrowerHighlight(false);  // 강조는 기본 없음
+    }
+
+    // ---------- 필터 적용 가시성(차주명은 여기서 제외) ----------
+    function isVisibleByFilters(obj) {
+      var sVisible = (obj.statusKey === "기타") ? true : (statusVisibility[obj.statusKey] !== false);
+      var spcVisible = spcVisibility[obj.spcKey] !== false;
+      var uVisible = usageVisibility[obj.usageKey] !== false;
+      var oVisible = ownerVisibility[obj.ownerKey] !== false;
+      return sVisible && spcVisible && uVisible && oVisible;
+    }
+
+    function updateMarkerVisibility() {
+      for (var i = 0; i < markers.length; i++) {
+        var obj = markers[i];
+        obj.marker.setVisible(isVisibleByFilters(obj));
+      }
+
+      // (6) 필터 변경되면 count/list도 실시간 업데이트
+      refreshAllCountsAndLists();
+    }
+
+    function fitMapToVisibleMarkers() {
+      var bounds = new google.maps.LatLngBounds();
+      var anyVisible = false;
+
+      for (var i = 0; i < markers.length; i++) {
+        var m = markers[i].marker;
+        if (m.getVisible()) {
+          bounds.extend(m.getPosition());
+          anyVisible = true;
+        }
+      }
+      if (anyVisible) {
+        // (5) 과도 확대 제한
+        fitBoundsWithMaxZoom(bounds, 12);
+      }
+    }
+
+    // ---------- (4) 차주명 강조 표시 ----------
+    function autoOpenInfoForBorrowerMatch(obj) {
+      try {
+        if (!obj || !obj.marker || !obj.infoHtml) return;
+        infowindow.setContent(obj.infoHtml);
+        infowindow.open(map, obj.marker);
+      } catch (e) {
+        console.warn("autoOpenInfoForBorrowerMatch failed:", e);
+      }
+    }
+
+    function applyBorrowerHighlight(shouldPan) {
+      clearBorrowerCircles();
+
+      var q = (borrowerHighlightQuery || "").trim().toLowerCase();
+
+      // 아이콘 원복
+      for (var i = 0; i < markers.length; i++) {
+        markers[i].marker.setIcon(markers[i].originalIconUrl);
+      }
+
+      if (!q) return;
+
+      var matchedPositions = [];
+      var matchedCount = 0;
+      var firstMatchedObj = null;
+
+      for (var j = 0; j < markers.length; j++) {
+        var obj = markers[j];
+
+        // 현재 필터로 '보이는' 마커 중에서만 강조 (원하면 여기 조건 제거 가능)
+        if (!obj.marker.getVisible()) continue;
+
+        var bName = (obj.borrowerName || "").toLowerCase();
+        if (bName.indexOf(q) !== -1) {
+          matchedCount++;
+          if (!firstMatchedObj) firstMatchedObj = obj;
+
+          // "기본 핀" = icon을 null로 주면 기본 마커로 표시됨
+          obj.marker.setIcon(null);
+
+          // 2km 원 표시
+          // 너무 많은 원 생성 방지(성능): 최대 150개까지만
+          if (borrowerCircles.length < 150) {
+            var c = new google.maps.Circle({
+              map: map,
+              center: obj.marker.getPosition(),
+              radius: 2000,
+              fillOpacity: 0.0,
+              strokeOpacity: 0.7,
+              strokeWeight: 1
+            });
+            borrowerCircles.push(c);
+          }
+
+          matchedPositions.push(obj.marker.getPosition());
+        }
+      }
+
+      // (5) 차주명 검색 확대가 너무 크지 않게: bounds + maxZoom 제한
+      if (shouldPan && matchedPositions.length > 0) {
+        var b = new google.maps.LatLngBounds();
+        for (var k = 0; k < matchedPositions.length; k++) b.extend(matchedPositions[k]);
+
+        // 원(2km)을 고려해서 bounds 확장: 첫 매치 원 bounds를 합산
+        if (borrowerCircles.length > 0) {
+          var cb = borrowerCircles[0].getBounds();
+          if (cb) b.union(cb);
+        }
+
+        fitBoundsWithMaxZoom(b, 14);
+      }
+
+      // 차주명 검색 시: 첫 번째 매칭 자산의 상세정보를 자동으로 표시
+      if (matchedPositions.length > 0) {
+        for (var t = 0; t < markers.length; t++) {
+          var candidate = markers[t];
+          if (!candidate.marker.getVisible()) continue;
+          var bn = (candidate.borrowerName || "").toLowerCase();
+          if (bn.indexOf(q) !== -1) {
+            infowindow.setContent(candidate.infoHtml || "");
+            infowindow.open(map, candidate.marker);
+            break;
+          }
+        }
+      }
+
+      if (shouldPan && matchedCount === 0) {
+        alert("해당 차주명으로 일치하는 자산이 없습니다.");
+      }
+
+      // (4) 차주명 검색 시: 첫 번째 일치 마커의 상세정보를 자동으로 표시
+      if (firstMatchedObj) {
+        autoOpenInfoForBorrowerMatch(firstMatchedObj);
+      }
+    }
+
+    // ---------- (6) 필터 적용 후 남는 데이터 기준으로 counts 계산 ----------
+    function computeFilteredCounts() {
+      var statusCounts = {};
+      var spcCounts = {};
+      var usageCounts = {};
+      var ownerCounts = {};
+
+      // 초기화
+      for (var i = 0; i < STATUS_KEYS.length; i++) statusCounts[STATUS_KEYS[i]] = 0;
+
+      // spc/usage/owner는 동적으로 수집
+      for (var m = 0; m < markers.length; m++) {
+        var obj = markers[m];
+        if (!isVisibleByFilters(obj)) continue;
+
+        // status (기타는 sidebar에 없으니 제외)
+        if (STATUS_KEYS.indexOf(obj.statusKey) !== -1) {
+          statusCounts[obj.statusKey] = (statusCounts[obj.statusKey] || 0) + 1;
+        }
+
+        spcCounts[obj.spcKey] = (spcCounts[obj.spcKey] || 0) + 1;
+        usageCounts[obj.usageKey] = (usageCounts[obj.usageKey] || 0) + 1;
+        ownerCounts[obj.ownerKey] = (ownerCounts[obj.ownerKey] || 0) + 1;
+      }
+
+      return { statusCounts: statusCounts, spcCounts: spcCounts, usageCounts: usageCounts, ownerCounts: ownerCounts };
+    }
+
+    function refreshAllCountsAndLists() {
+      var counts = computeFilteredCounts();
+
+      renderStatusCounts(counts.statusCounts);
+      renderUsageFilters(counts.usageCounts);
+      renderSpcFilters(counts.spcCounts);
+      renderOwnerFilters(counts.ownerCounts);
+
+      // 검색어가 입력되어 있을 때 UI 재렌더로 display가 초기화될 수 있어서
+      // 현재 검색어를 다시 적용
+      reapplyListSearch("usage-search", "usage-list");
+      reapplyListSearch("spc-search", "spc-list");
+      reapplyListSearch("owner-search", "owner-list");
+    }
+
+    function reapplyListSearch(inputId, listId) {
+      var input = document.getElementById(inputId);
+      var list = document.getElementById(listId);
+      if (!input || !list) return;
+
+      var q = (input.value || "").toLowerCase();
+      var rows = list.children;
+      for (var i = 0; i < rows.length; i++) {
+        var row = rows[i];
+        var labelSpan = row.querySelector(".status-left span:last-child");
+        var text = labelSpan ? labelSpan.textContent.toLowerCase() : "";
+        row.style.display = text.indexOf(q) !== -1 ? "" : "none";
+      }
+    }
+
+    // ---------- 상태 필터 ----------
+    function renderStatusFilters() {
+      var container = document.getElementById("status-filters");
+      container.innerHTML = "";
+
+      for (var i = 0; i < STATUS_KEYS.length; i++) {
+        var statusKey = STATUS_KEYS[i];
+        var colorName = statusColorName(statusKey);
+
+        var wrapper = document.createElement("div");
+        wrapper.className = "status-item";
+
+        var left = document.createElement("div");
+        left.className = "status-left";
+
+        var checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.checked = (statusVisibility[statusKey] !== false);
+        checkbox.setAttribute("data-status", statusKey);
+
+        var dot = document.createElement("span");
+        dot.className = "dot";
+        dot.style.backgroundColor = colorName;
+
+        var label = document.createElement("span");
+        label.textContent = statusKey;
+
+        left.appendChild(checkbox);
+        left.appendChild(dot);
+        left.appendChild(label);
+
+        wrapper.appendChild(left);
+        container.appendChild(wrapper);
+
+        checkbox.addEventListener("change", function() {
+          var key = this.getAttribute("data-status");
+          statusVisibility[key] = this.checked;
+          updateMarkerVisibility();
+          fitMapToVisibleMarkers();
+          // 차주 강조가 켜져 있으면, 필터 후 visible 기반으로 다시 강조 적용
+          applyBorrowerHighlight(false);
+        });
+      }
+    }
+
+    function renderStatusCounts(statusCounts) {
+      var container = document.getElementById("status-counts");
+      container.innerHTML = "";
+
+      for (var i = 0; i < STATUS_KEYS.length; i++) {
+        var statusKey = STATUS_KEYS[i];
+        var count = statusCounts[statusKey] || 0;
+        var colorName = statusColorName(statusKey);
+
+        var row = document.createElement("div");
+        row.className = "status-item";
+
+        var left = document.createElement("div");
+        left.className = "status-left";
+
+        var dot = document.createElement("span");
+        dot.className = "dot";
+        dot.style.backgroundColor = colorName;
+
+        var label = document.createElement("span");
+        label.textContent = statusKey;
+
+        left.appendChild(dot);
+        left.appendChild(label);
+
+        var right = document.createElement("span");
+        right.textContent = count + "건";
+
+        row.appendChild(left);
+        row.appendChild(right);
+
+        container.appendChild(row);
+      }
+    }
+
+    // ---------- 담보용도 ----------
+    function renderUsageFilters(usageCounts) {
+      var container = document.getElementById("usage-list");
+      container.innerHTML = "";
+
+      var entries = [];
+      // 전체 리스트(필터에서 사라지지 않게): 현재까지 발견된 모든 담보용도 키를 기준으로 렌더
+      for (var usage in usageVisibility) {
+        if (!Object.prototype.hasOwnProperty.call(usageVisibility, usage)) continue;
+        entries.push({ key: usage, count: usageCounts[usage] || 0 });
+      }
+      entries.sort(function(a, b) { return b.count - a.count; });
+
+      for (var i = 0; i < entries.length; i++) {
+        var item = entries[i];
+
+        // visibility map에 없는 키가 새로 등장하면 기본 true
+        if (usageVisibility[item.key] === undefined) usageVisibility[item.key] = true;
+
+        var row = document.createElement("div");
+        row.className = "usage-item";
+
+        var left = document.createElement("div");
+        left.className = "status-left";
+
+        var checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.checked = (usageVisibility[item.key] !== false);
+        checkbox.setAttribute("data-usage", item.key);
+
+        var dot = document.createElement("span");
+        dot.className = "dot";
+        dot.style.backgroundColor = "#888";
+
+        var label = document.createElement("span");
+        label.textContent = item.key;
+
+        left.appendChild(checkbox);
+        left.appendChild(dot);
+        left.appendChild(label);
+
+        var countSpan = document.createElement("span");
+        countSpan.textContent = item.count + "건";
+
+        row.appendChild(left);
+        row.appendChild(countSpan);
+        container.appendChild(row);
+
+        checkbox.addEventListener("change", function() {
+          var k = this.getAttribute("data-usage");
+          usageVisibility[k] = this.checked;
+          updateMarkerVisibility();
+          fitMapToVisibleMarkers();
+          applyBorrowerHighlight(false);
+        });
+      }
+    }
+
+    // ---------- SPC ----------
+    function renderSpcFilters(spcCounts) {
+      var container = document.getElementById("spc-list");
+      container.innerHTML = "";
+
+      var entries = [];
+      // 전체 리스트(필터에서 사라지지 않게): 현재까지 발견된 모든 SPC 키를 기준으로 렌더
+      for (var spc in spcVisibility) {
+        if (!Object.prototype.hasOwnProperty.call(spcVisibility, spc)) continue;
+        entries.push({ key: spc, count: spcCounts[spc] || 0 });
+      }
+      entries.sort(function(a, b) { return b.count - a.count; });
+
+      for (var i = 0; i < entries.length; i++) {
+        var item = entries[i];
+
+        if (spcVisibility[item.key] === undefined) spcVisibility[item.key] = true;
+
+        var row = document.createElement("div");
+        row.className = "spc-item";
+
+        var left = document.createElement("div");
+        left.className = "status-left";
+
+        var checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.checked = (spcVisibility[item.key] !== false);
+        checkbox.setAttribute("data-spc", item.key);
+
+        var label = document.createElement("span");
+        label.textContent = item.key;
+
+        left.appendChild(checkbox);
+        left.appendChild(label);
+
+        var countSpan = document.createElement("span");
+        countSpan.textContent = item.count + "건";
+
+        row.appendChild(left);
+        row.appendChild(countSpan);
+        container.appendChild(row);
+
+        checkbox.addEventListener("change", function() {
+          var k = this.getAttribute("data-spc");
+          spcVisibility[k] = this.checked;
+          updateMarkerVisibility();
+          fitMapToVisibleMarkers();
+          applyBorrowerHighlight(false);
+        });
+      }
+    }
+
+    // ---------- 담당자 ----------
+    function renderOwnerFilters(ownerCounts) {
+      var container = document.getElementById("owner-list");
+      container.innerHTML = "";
+
+      var entries = [];
+      // 전체 리스트(필터에서 사라지지 않게): 현재까지 발견된 모든 담당자 키를 기준으로 렌더
+      for (var o in ownerVisibility) {
+        if (!Object.prototype.hasOwnProperty.call(ownerVisibility, o)) continue;
+        entries.push({ key: o, count: ownerCounts[o] || 0 });
+      }
+      entries.sort(function(a, b) { return b.count - a.count; });
+
+      for (var i = 0; i < entries.length; i++) {
+        var item = entries[i];
+
+        if (ownerVisibility[item.key] === undefined) ownerVisibility[item.key] = true;
+
+        var row = document.createElement("div");
+        row.className = "owner-item";
+
+        var left = document.createElement("div");
+        left.className = "status-left";
+
+        var checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.checked = (ownerVisibility[item.key] !== false);
+        checkbox.setAttribute("data-owner", item.key);
+
+        var label = document.createElement("span");
+        label.textContent = item.key;
+
+        left.appendChild(checkbox);
+        left.appendChild(label);
+
+        var countSpan = document.createElement("span");
+        countSpan.textContent = item.count + "건";
+
+        row.appendChild(left);
+        row.appendChild(countSpan);
+        container.appendChild(row);
+
+        checkbox.addEventListener("change", function() {
+          var k = this.getAttribute("data-owner");
+          ownerVisibility[k] = this.checked;
+          updateMarkerVisibility();
+          fitMapToVisibleMarkers();
+          applyBorrowerHighlight(false);
+        });
+      }
+    }
+
+    function setupUsageFilterUI() {
+      var searchInput = document.getElementById("usage-search");
+      var btnAll = document.getElementById("usage-all");
+      var btnNone = document.getElementById("usage-none");
+      var list = document.getElementById("usage-list");
+      if (!searchInput || !btnAll || !btnNone || !list) return;
+
+      searchInput.addEventListener("keyup", function() {
+        reapplyListSearch("usage-search", "usage-list");
+      });
+
+      btnAll.addEventListener("click", function() {
+        var boxes = list.querySelectorAll("input[data-usage]");
+        for (var i = 0; i < boxes.length; i++) {
+          var box = boxes[i];
+          var k = box.getAttribute("data-usage");
+          box.checked = true;
+          usageVisibility[k] = true;
+        }
+        updateMarkerVisibility();
+        fitMapToVisibleMarkers();
+        applyBorrowerHighlight(false);
+      });
+
+      btnNone.addEventListener("click", function() {
+        var boxes = list.querySelectorAll("input[data-usage]");
+        for (var i = 0; i < boxes.length; i++) {
+          var box = boxes[i];
+          var k = box.getAttribute("data-usage");
+          box.checked = false;
+          usageVisibility[k] = false;
+        }
+        updateMarkerVisibility();
+        fitMapToVisibleMarkers();
+        applyBorrowerHighlight(false);
+      });
+    }
+
+    function setupSpcFilterUI() {
+      var searchInput = document.getElementById("spc-search");
+      var btnAll = document.getElementById("spc-all");
+      var btnNone = document.getElementById("spc-none");
+      var list = document.getElementById("spc-list");
+      if (!searchInput || !btnAll || !btnNone || !list) return;
+
+      searchInput.addEventListener("keyup", function() {
+        reapplyListSearch("spc-search", "spc-list");
+      });
+
+      btnAll.addEventListener("click", function() {
+        var boxes = list.querySelectorAll("input[data-spc]");
+        for (var i = 0; i < boxes.length; i++) {
+          var box = boxes[i];
+          var k = box.getAttribute("data-spc");
+          box.checked = true;
+          spcVisibility[k] = true;
+        }
+        updateMarkerVisibility();
+        fitMapToVisibleMarkers();
+        applyBorrowerHighlight(false);
+      });
+
+      btnNone.addEventListener("click", function() {
+        var boxes = list.querySelectorAll("input[data-spc]");
+        for (var i = 0; i < boxes.length; i++) {
+          var box = boxes[i];
+          var k = box.getAttribute("data-spc");
+          box.checked = false;
+          spcVisibility[k] = false;
+        }
+        updateMarkerVisibility();
+        fitMapToVisibleMarkers();
+        applyBorrowerHighlight(false);
+      });
+    }
+
+    function setupOwnerFilterUI() {
+      var searchInput = document.getElementById("owner-search");
+      var btnAll = document.getElementById("owner-all");
+      var btnNone = document.getElementById("owner-none");
+      var list = document.getElementById("owner-list");
+      if (!searchInput || !btnAll || !btnNone || !list) return;
+
+      searchInput.addEventListener("keyup", function() {
+        reapplyListSearch("owner-search", "owner-list");
+      });
+
+      btnAll.addEventListener("click", function() {
+        var boxes = list.querySelectorAll("input[data-owner]");
+        for (var i = 0; i < boxes.length; i++) {
+          var box = boxes[i];
+          var k = box.getAttribute("data-owner");
+          box.checked = true;
+          ownerVisibility[k] = true;
+        }
+        updateMarkerVisibility();
+        fitMapToVisibleMarkers();
+        applyBorrowerHighlight(false);
+      });
+
+      btnNone.addEventListener("click", function() {
+        var boxes = list.querySelectorAll("input[data-owner]");
+        for (var i = 0; i < boxes.length; i++) {
+          var box = boxes[i];
+          var k = box.getAttribute("data-owner");
+          box.checked = false;
+          ownerVisibility[k] = false;
+        }
+        updateMarkerVisibility();
+        fitMapToVisibleMarkers();
+        applyBorrowerHighlight(false);
+      });
+    }
+
+    // ---------- 주소/지번 검색 ----------
+    function setupSearchBox() {
+      var input = document.getElementById("search-input");
+      var btn = document.getElementById("search-btn");
+      if (!input || !btn) return;
+
+      function doSearch() {
+        var q = input.value;
+        if (!q || !q.trim()) return;
+        if (!geocoder) return;
+
+        geocoder.geocode({ address: q.trim(), region: "kr" }, function(results, status) {
+          if (status === "OK" && results && results.length > 0) {
+            var loc = results[0].geometry.location;
+
+            if (searchCircle) searchCircle.setMap(null);
+
+            // (5) 과도 확대 완화: 반경을 2km로(기존 1km)
+            searchCircle = new google.maps.Circle({
+              map: map,
+              center: loc,
+              radius: 2000,
+              fillColor: "#4285F4",
+              fillOpacity: 0.12,
+              strokeColor: "#4285F4",
+              strokeOpacity: 0.75,
+              strokeWeight: 1
+            });
+
+            // (5) zoom 제한
+            fitBoundsWithMaxZoom(searchCircle.getBounds(), 15);
+          } else {
+            alert("해당 주소를 찾을 수 없습니다: " + status);
+          }
+        });
+      }
+
+      btn.addEventListener("click", doSearch);
+      input.addEventListener("keyup", function(e) {
+        if ((e.keyCode || e.which) === 13) doSearch();
+      });
+    }
+
+    // ---------- (4) 차주명 검색(강조) ----------
+    function setupBorrowerBox() {
+      var input = document.getElementById("borrower-input");
+      var btn = document.getElementById("borrower-btn");
+      if (!input || !btn) return;
+
+      function applyBorrowerHighlightUI() {
+        borrowerHighlightQuery = (input.value || "").trim();
+        applyBorrowerHighlight(true);
+      }
+
+      btn.addEventListener("click", applyBorrowerHighlightUI);
+      input.addEventListener("keyup", function(e) {
+        if ((e.keyCode || e.which) === 13) applyBorrowerHighlightUI();
+      });
+    }
+
+    function setupDiscoBox() {
+      var input = document.getElementById("disco-input");
+      var btn = document.getElementById("disco-btn");
+      if (!input || !btn) return;
+
+      function openDisco() {
+        var q = (input.value || "").trim();
+        if (!q) return;
+
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(q).catch(function(e) {
+            console.warn("Clipboard copy failed:", e);
+          });
+        }
+
+        var url = "https://disco.re/#search=" + encodeURIComponent(q);
+        window.open(url, "_blank");
+      }
+
+      btn.addEventListener("click", openDisco);
+      input.addEventListener("keyup", function(e) {
+        if ((e.keyCode || e.which) === 13) openDisco();
+      });
+    }
+
+    function setupResetButton() {
+      var btn = document.getElementById("reset-btn");
+      if (!btn) return;
+
+      btn.addEventListener("click", function() {
+        for (var i = 0; i < STATUS_KEYS.length; i++) statusVisibility[STATUS_KEYS[i]] = true;
+
+        for (var spcKey in spcVisibility) if (Object.prototype.hasOwnProperty.call(spcVisibility, spcKey)) spcVisibility[spcKey] = true;
+        for (var usageKey in usageVisibility) if (Object.prototype.hasOwnProperty.call(usageVisibility, usageKey)) usageVisibility[usageKey] = true;
+        for (var ownerKey in ownerVisibility) if (Object.prototype.hasOwnProperty.call(ownerVisibility, ownerKey)) ownerVisibility[ownerKey] = true;
+
+        borrowerHighlightQuery = "";
+
+        var boxes = document.querySelectorAll('input[data-status], input[data-spc], input[data-usage], input[data-owner]');
+        for (i = 0; i < boxes.length; i++) boxes[i].checked = true;
+
+        var usageSearch = document.getElementById("usage-search");
+        var spcSearch = document.getElementById("spc-search");
+        var ownerSearch = document.getElementById("owner-search");
+        var addrSearch = document.getElementById("search-input");
+        var borrowerInput = document.getElementById("borrower-input");
+        var discoInput = document.getElementById("disco-input");
+        if (usageSearch) usageSearch.value = "";
+        if (spcSearch) spcSearch.value = "";
+        if (ownerSearch) ownerSearch.value = "";
+        if (addrSearch) addrSearch.value = "";
+        if (borrowerInput) borrowerInput.value = "";
+        if (discoInput) discoInput.value = "";
+
+        var lists = ["usage-list", "spc-list", "owner-list"];
+        for (i = 0; i < lists.length; i++) {
+          var el = document.getElementById(lists[i]);
+          if (!el) continue;
+          var rows = el.children;
+          for (var j = 0; j < rows.length; j++) rows[j].style.display = "";
+        }
+
+        if (searchCircle) {
+          searchCircle.setMap(null);
+          searchCircle = null;
+        }
+
+        clearBorrowerCircles();
+
+        updateMarkerVisibility();
+        applyBorrowerHighlight(false);
+        fitMapToVisibleMarkers();
+      });
+    }
+  </script>
+
+  <script
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBTVyw7RGmhmMTwbF9FLoxuqBnfA5nrrSc&callback=initMap"
+    async
+    defer
+  ></script>
+</body>
+</html>
