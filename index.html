@@ -553,7 +553,7 @@
     // ---------- 데이터 로드 ----------
     function loadAssets() {
       var xhr = new XMLHttpRequest();
-      xhr.open("GET", "/api/assets", false);
+      xhr.open("GET", "/assets.json", false);
       xhr.send(null);
 
       if (xhr.status === 200) {
